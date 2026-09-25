@@ -1,0 +1,36 @@
+-- Step 1: Aggregate Monthly Sales and Revenue Growth across Product Lines
+WITH Monthly_Sales AS (
+    SELECT 
+        product_line,
+        DATE_TRUNC('month', transaction_date) AS sales_month,
+        SUM(revenue) AS total_monthly_revenue,
+        COUNT(DISTINCT customer_id) AS active_customers
+    FROM enterprise_sales
+    GROUP BY product_line, DATE_TRUNC('month', transaction_date)
+),
+
+-- Step 2: Calculate Month-over-Month (MoM) Revenue Growth using Window Functions
+Sales_Growth AS (
+    SELECT 
+        product_line,
+        sales_month,
+        total_monthly_revenue,
+        LAG(total_monthly_revenue, 1) OVER (PARTITION BY product_line ORDER BY sales_month) AS prev_month_revenue,
+        (total_monthly_revenue - LAG(total_monthly_revenue, 1) OVER (PARTITION BY product_line ORDER BY sales_month)) / 
+            NULLIF(LAG(total_monthly_revenue, 1) OVER (PARTITION BY product_line ORDER BY sales_month), 0) * 100 AS mom_growth_pct
+    FROM Monthly_Sales
+)
+
+-- Step 3: Identify High Revenue and Underperforming Product Lines for Executive Review
+SELECT 
+    product_line,
+    sales_month,
+    total_monthly_revenue,
+    ROUND(mom_growth_pct, 2) AS mom_growth_percentage,
+    CASE 
+        WHEN mom_growth_pct > 15 THEN 'High Growth'
+        WHEN mom_growth_pct BETWEEN 0 AND 15 THEN 'Stable'
+        ELSE 'Underperforming SKU'
+    END AS performance_category
+FROM Sales_Growth
+ORDER BY sales_month DESC, total_monthly_revenue DESC;
